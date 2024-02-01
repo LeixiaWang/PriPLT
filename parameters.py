@@ -21,7 +21,7 @@ def algo_args():
     # str type
     parser.add_argument("--error_metric", type=str, default='square', help='the metric for error, the cadidates are "squre" and "max_absolute')
     parser.add_argument("--data_path", type=str, default='./datasets/', help='the path of dataset')
-    parser.add_argument("--dataset", type=str, default='loan', help="the default dataset")
+    parser.add_argument("--dataset", type=str, default='salary', help="the default dataset")
     parser.add_argument("--query_path", type=str, default='./query/', help="the path of queries")
     
     # 解析参数对象
