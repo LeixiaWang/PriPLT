@@ -2,7 +2,7 @@
 
 ## Contents
 
-* 🌸 **PriPL-Tree (Full Version).pdf**: The complete manuscript, including additional appendices.
+* 🌸 **PriPL-Tree(full_version).pdf**: The complete manuscript, including additional appendices.
 * 🌸 **main.py**: Examples demonstrating how to use our provided functions to build PriPL-Trees and respond to range queries.
 * **frequency_oracle.py**: The basic SW and OUE mechanisms.
 * **pl_approximation.py**: The piecewise linear fitting function.
