@@ -32,9 +32,9 @@ def load_data(data_name, dimension_num = 1, user_num = None, domain_size = None)
         # print("the number of attributes:", len(data.attrs['description']))
         rng = np.random.default_rng(0)
         if dimension_num == 0: # return all attributes
-            index = range(len(data.attrs['description']))
+            index = slice(0, len(data.attrs['description']))
         else: # return attributes randomly
-            index = range(dimension_num)
+            index = slice(0, dimension_num)
         # select dimension
         selected_data = data[:,index]
         rng.shuffle(selected_data) # shuffle all users
@@ -70,12 +70,14 @@ def load_queries(query_volume = arguments.query_volume, domain_sizes = arguments
             for mult-d cases, the doamin sizes is a list or a np.ndarray, storing multiple domain sizes of attributes
         query_dimensions(int): the dimension of the query
     '''
+    # if isinstance(domain_sizes, (int, float)) and query_dimensions > 1:
     if np.isscalar(domain_sizes) and query_dimensions > 1:
         raise Exception('Error in loading queries: the domain sizes do not match the dimension.')
     file_name = arguments.query_path + 'queries_{}.hdf5'.format(query_volume)
     with h5py.File(file_name, 'r') as rf:
         original_queries = rf['queries'][:]
         query_num = rf['queries'].attrs['query_number']
+    # if isinstance(domain_sizes, (int, float)):
     if np.isscalar(domain_sizes):
         rng = np.random.default_rng(0)
         queries_td = original_queries.copy()
@@ -106,14 +108,6 @@ def slices_sum(data, sub_range):
         ind = ind[:-1]
     return np.add.reduceat(data.ravel(), ind)[::2]
 
-def mre(est:np.array, real:np.array):
-    '''
-    mean relative value: give up this matrics since the real answer could be 0
-    '''
-    absolute_error = np.abs(est -  real)
-    mres = absolute_error / real
-    return np.average(mres)
-
 def mse(values1:np.array, values2:np.array):
     '''
     mean square error
@@ -121,7 +115,7 @@ def mse(values1:np.array, values2:np.array):
     mses = np.square(values1 - values2)
     return np.average(mses)
 
-def count(data, domain_sizes: int or tuple):
+def count(data, domain_sizes: int | tuple):
     if np.size(domain_sizes) == 1:
         hist = np.zeros(domain_sizes)
         unique, counts = np.unique(data, return_counts=True)

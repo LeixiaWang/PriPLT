@@ -17,8 +17,7 @@ if __name__ == '__main__':
     queries = tool.load_queries(query_volume = arguments.query_volume, domain_sizes = domain_size, query_dimensions=1)
     a_query = queries[0]
     # 4th. respond to query
-    est_distr = priplt.get_distribution_from_tree(built_tree)
-    ans = np.sum(est_distr[a_query[0]:a_query[1]+1])
+    ans = priplt.query(a_query)
     print("the answer of Q({}) is {}".format(a_query, ans))
 
     # A example for ]ambda-D range queries

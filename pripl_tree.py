@@ -6,13 +6,13 @@ from treelib import Tree, Node
 import queue
 from collections import deque
 
-
 class Node_pl(object):
     def __init__(self, interval_left, interval_right, domain_size, frequency = None, slope = None, error = None):
         self.interval_left = interval_left
         self.interval_right = interval_right
         self.set_data(frequency, slope, error, domain_size, comp_partial_query_weight = True)
         self.left_user_ratio = 0
+        self.error_coef = None
 
 
     def set_data(self, frequency = None, slope = None, error = None, domain_size = None, comp_partial_query_weight = False):
@@ -28,6 +28,10 @@ class Node_pl(object):
     
     def reset_slope(self, slope):
         self.slope = slope 
+
+    def initial_error_coef(self, nodes_id, nodes_number):
+        self.error_coef = np.zeros(nodes_number)
+        self.error_coef[nodes_id] = 1
 
     def set_allocated_users(self, total_num, left_num, proportion):
         '''
@@ -45,7 +49,7 @@ class Pripl_tree(object):
     '''
     the private piecewise linear tree, only for 1-d data
     '''
-    def __init__(self, data, domain_size, epsilon = arguments.epsilon, alpha = arguments.alpha):
+    def __init__(self, data, domain_size, epsilon = arguments.epsilon, alpha = arguments.alpha, search_granularity = arguments.search_granularity):
         '''
         Args:
             data(np.array): a 2-d ndarray with only 1-d data
@@ -59,7 +63,7 @@ class Pripl_tree(object):
         self.domain_size = int(domain_size)
         self.epsilon = epsilon
         self.alpha = alpha
-        self.real_hist = self._get_real_hist(self.data) # only for test
+        self.search_granularity = search_granularity
         
 
     def build_pripl_tree(self):
@@ -75,7 +79,6 @@ class Pripl_tree(object):
         # phase 2: pripl-tree construction
         pripl_tree = self._pripl_construction(segments, slopes)
         self._uniform_user_allocation(pripl_tree)
-        # self._weighted_user_allocation(pripl_tree)
         for node in pripl_tree.all_nodes():
             if not node.is_root():
                 self._estimate_node_frequency(node)
@@ -105,41 +108,68 @@ class Pripl_tree(object):
             d = node.data.interval_right - node.data.interval_left + 1
             if d > 1:
                 node.data.reset_slope(self._refine_slope(node.data.original_slope, d, node.data.frequency))
+        # update non-leaf nodes
+        for node in self._dfs_postorder_traveral(pripl_tree):
+            if not node.is_leaf():
+                node.data.frequency = 0
+                for child in pripl_tree.children(node.identifier):
+                    node.data.frequency += child.data.frequency
     
 
-    def get_distribution_from_tree(self, pripl_tree = None, return_error = False):
+    def get_distribution_from_tree(self, pripl_tree = None):
         if pripl_tree is None:
             pripl_tree = self.tree
         distr = np.zeros(self.domain_size)
-        error = np.zeros(self.domain_size)
         for node in pripl_tree.leaves():
             d = node.data.interval_right - node.data.interval_left + 1
             x = np.arange(node.data.interval_left, node.data.interval_right+1).astype(int)
             distr[x] = self._pl_range_query(x,x, node.data.interval_left, d, node.data.slope, node.data.frequency)
-            if return_error:
-                error[x] = node.data.error / len(x)
         # this negative frequency comes from the inaccurate float refined slopes
         distr[distr < 0] = 0
-        if return_error:
-            return distr, error
+        return distr
+        
+
+    def query(self, query_range, pripl_tree = None):
+        if pripl_tree is None:
+            pripl_tree = self.tree
+        ans = 0
+        query_queue = queue.Queue()
+        root = pripl_tree.get_node(pripl_tree.root)
+        query_queue.put(root)
+        while not query_queue.empty():
+            node = query_queue.get()
+            intersect_s = self.__intersection([node.data.interval_left, node.data.interval_right], query_range)
+            if intersect_s > 0:
+                ans += node.data.frequency
+            elif intersect_s < 0:
+                if node.is_leaf():
+                    l = max(query_range[0], node.data.interval_left)
+                    r = min(query_range[1], node.data.interval_right)
+                    d = node.data.interval_right - node.data.interval_left + 1
+                    ans += self._pl_range_query(l, r, node.data.interval_left, d, node.data.slope, node.data.frequency)
+                else:
+                    for child in pripl_tree.children(node.identifier):
+                        query_queue.put(child)
+        return ans
+
+
+    def __intersection(self, node_range, query_range):
+        if node_range[0] > query_range[1] or node_range[1] < query_range[0]:
+            # no overlap
+            return 0
+        elif node_range[0] >= query_range[0] and node_range[1] <= query_range[1]:
+            # complete overlap
+            return 1
         else:
-            return distr
-    
-
-    def _get_real_hist(self, data):
-        hist = np.zeros(self.domain_size)
-        unique, counts = np.unique(data, return_counts=True)
-        for i in range(len(unique)):
-            hist[int(unique[i])] = counts[i]
-        return hist / len(data)
-
+            # partial overlap
+            return -1
+        
 
     def _pl_range_query(self, l, r, segment_start, d, slope, count):
         '''
         Args:
             [l,r]: the bound of range query in the segment.
-            segment_start: i.e. ceil(s_{i}). when the PLA performed in the subdomain,\
-                  it refers to the start point for the first segment.
+            segment_start: i.e. ceil(s_{i}). he start point of the segment.
             d: the domain size of this segment
             slope: the refined slope of this segment
             count: the sum of counts or frequencies of items in this segment
@@ -171,26 +201,6 @@ class Pripl_tree(object):
                 to_be_allocated_user_num = pl_tree.parent(node.identifier).data.left_user_num
                 subtree_depth = pl_tree.subtree(node.identifier).depth() + 1
                 node.data.set_allocated_users(self.user_num, to_be_allocated_user_num, 1/subtree_depth)
-
-
-    def _weighted_user_allocation(self, pripl_tree):
-        # compute the weight
-        for node in self._dfs_postorder_traveral(pripl_tree):
-            node.data.query_weight = math.sqrt(node.data.partial_query_weight - pripl_tree.parent(node.identifier).data.partial_query_weight)
-            if not node.is_leaf():
-                children_weight = np.array([child.data.query_weight for child in pripl_tree.children(node.identifier)])
-                children_descendent_weight = np.array([child.data.descendant_query_weight for child in pripl_tree.children(node.identifier)])
-                descendant_query_weight = np.max(children_weight + children_descendent_weight) # np.max np.min np.average (三选一)
-                node.data.set_data(descendant_query_weight = descendant_query_weight)
-        # allocate users
-        tree_user_num = self.user_num - (self.underlying_users[1] - self.underlying_users[0] + 1)
-        for node in self._bfs(pripl_tree, return_root=True):
-            if node.is_root():
-                node.data.set_allocated_users(self.user_num, tree_user_num, 0)
-            else:
-                to_be_allocated_user_num = pripl_tree.parent(node.identifier).data.left_user_num
-                user_ratio = node.data.query_weight / (node.data.query_weight + node.data.descendant_query_weight)
-                node.data.set_allocated_users(self.user_num, to_be_allocated_user_num, user_ratio)
 
 
     def _estimate_underly_hist(self, users):
@@ -242,7 +252,7 @@ class Pripl_tree(object):
             while np.any(split_signs == 1) and split_condition:
                 error_list = segment_error * split_signs
                 index = np.argmax(error_list)
-                best_break_point, breakpoints, slopes = pl_approximation.search_with_multi_level_steps(noisy_hist, breakpoints, segments[index][0], segments[index][1], True, minima_segment_length=minima_segment_length)
+                best_break_point, breakpoints, slopes = pl_approximation.search_with_multi_level_steps(noisy_hist, breakpoints, segments[index][0], segments[index][1], True, minima_segment_length=minima_segment_length, support_searched_domain_size=self.search_granularity)
                 # update the segments
                 temp = segments.copy()
                 segments = np.empty((len(breakpoints) - 1, 2), dtype=int)
@@ -265,7 +275,7 @@ class Pripl_tree(object):
             part -= 1
         slopes = slopes[1:]
         return segments, slopes
-
+        
 
     def _pripl_construction(self, segments, slopes, branch = 2):
         '''
@@ -362,12 +372,29 @@ class Pripl_tree(object):
         '''
         dfs: postorder traversal, implemented through tow stacks
         '''
+        # global parameter
+        nodes_num = len(pripl_tree.all_nodes()) - 1
+        self.error_vector = np.zeros(nodes_num)
+        # root node
+        root = pripl_tree.get_node(pripl_tree.root)
+        root.data.error_coef = np.zeros(nodes_num)
+        # trasversal of all nodes
+        node_index = 0
         for node in self._dfs_postorder_traveral(pripl_tree):
+            node.data.initial_error_coef(node_index, nodes_num)
             if node.is_leaf():
                 if consider_underlying_distribution:
                     self._update_frequency_in_wa(pripl_tree, node, is_leaf = True)
+                self.error_vector[node_index] = node.data.error
             else:
-                self._update_frequency_in_wa(pripl_tree, node, is_leaf = False)
+                self.error_vector[node_index] = node.data.error
+                alpha_1, alpha_2 = self._update_frequency_in_wa(pripl_tree, node, is_leaf = False)
+                update_error_coef = alpha_1 * node.data.error_coef
+                for child in pripl_tree.children(node.identifier):
+                    update_error_coef += alpha_2 * child.data.error_coef
+                node.data.error_coef = update_error_coef.copy()
+                node.data.error = np.dot(update_error_coef, self.error_vector)
+            node_index += 1
 
 
     def _update_frequency_in_wa(self, pripl_tree, node, is_leaf):
@@ -388,6 +415,7 @@ class Pripl_tree(object):
         x = alpha * x_1 + (1 - alpha) * x_2
         node.data.frequency = x
         node.data.error = var_1 * var_2 / (var_1 + var_2)
+        return alpha, 1 - alpha
 
 
     def _frequency_consistency(self, pripl_tree, non_negative = True):
@@ -399,19 +427,26 @@ class Pripl_tree(object):
                 parent_f = node.data.frequency
                 children = pripl_tree.children(node.identifier)
                 children_f = np.zeros(len(children))
-                children_var = np.zeros(len(children))
+                error_coef_matrix = np.zeros((len(children), len(pripl_tree.all_nodes())-1))
                 for i in range(len(children)):
                     children_f[i] = children[i].data.frequency
-                    children_var[i] = children[i].data.error
+                    error_coef_matrix[i] = children[i].data.error_coef
                 update_children_f = self._update_frequency_in_fc(children_f, parent_f, non_negative)
-                beta = (update_children_f - children_f) / (node.data.frequency - children_f.sum()) if node.data.frequency != children_f.sum() else 0
-                update_children_var = np.square(1-beta) * children_var + np.square(beta) * (node.data.error + np.sum(children_var) - children_var)
+                C_plus = np.where(update_children_f > 0)[0]
+                coef = np.zeros(len(children))
+                if len(C_plus) > 0:
+                    coef[C_plus] = - 1 / len(C_plus)
                 for i in range(len(children)):
                     children[i].data.frequency = update_children_f[i]
-                    children[i].data.error = update_children_var[i]
+                    if i in C_plus: # f_c in C+, then we update its variance
+                        coef_w = coef.copy()
+                        coef_w[i] += 1
+                        children[i].data.error_coef = (1 / len(C_plus)) * node.data.error_coef + np.dot(coef_w, error_coef_matrix)
+                        children[i].data.error = np.dot(np.square(children[i].data.error_coef), self.error_vector)
 
 
     def _update_frequency_in_fc(self, children_f:np.array, parent_f, non_negative = True):
+        # we can not compute this directly
         if parent_f == 0:
             C = np.zeros(np.shape(children_f))
         else:
@@ -424,6 +459,28 @@ class Pripl_tree(object):
                     C[mask] += (parent_f - C.sum()) / np.sum(mask)
         return C
 
+    def _weighted_update_frequency_in_fc(self, children_f:np.array, children_var:np.array, parent_f, non_negative = True, return_coef = False):
+        # we can not compute this directly
+        if parent_f == 0:
+            C = np.zeros(np.shape(children_f))
+            W = np.zeros(np.shape(children_f))
+        else:
+            C = children_f.copy()
+            W = children_var / np.sum(children_var)
+            C = C - (C.sum() - parent_f) * W
+            if non_negative:
+                while (C < 0).any():
+                    mask_p = (C > 0) 
+                    mask_0 = (C <= 0)
+                    W[mask_0] = 0
+                    W[mask_p] = children_var[mask_p] / np.sum(children_var[mask_p])
+                    C = children_f.copy()
+                    C[mask_0] = 0
+                    C = C - (C.sum() - parent_f) * W
+        if return_coef:
+            return C, W
+        else:
+            return C
 
     def _refine_slope(self, slope, d, count):
         assert d > 1   

@@ -2,18 +2,6 @@ import numpy as np
 import math
 from frequency_oracle import *
 
-# def _linear_regression(X, Y):
-#     '''
-#     Args:
-#         seg: the list of x
-#         noisy_hist: the total noisy histogram
-#     '''
-#     result = stats.linregress(X, Y)
-#     fitted_Y = X * result.slope + result.intercept
-#     residual = tool.square_error(Y, fitted_Y)
-#     return result.slope, result.intercept, residual
-
-
 def multi_piece_closed_solution(Y, break_points, return_residuals = False):
     '''
     We always compute the slopes from the whole domain.
@@ -68,7 +56,7 @@ def search_the_best_break_points(Y, break_points, l, r, return_all_break_points 
         return best_break_point, best_slopes
     
 
-def search_with_multi_level_steps(Y, break_points, l, r, return_all_break_points = False, minima_segment_length = 2, support_searched_domain_size = 2 ** 7):
+def search_with_multi_level_steps(Y, break_points, l, r, return_all_break_points = False, minima_segment_length = 2, support_searched_domain_size = arguments.search_granularity):
     '''
     the formal pl fitting function
     '''
@@ -153,4 +141,3 @@ def RSS(Y, break_points, slopes, total_not_segment = False):
         segments_RSS = [residual_sqr[math.floor(break_points[i])+1: math.floor(break_points[i+1])+1].sum() for i in range(len(break_points)-1)]
         segments_RSS[0] += residual_sqr[0]
         return segments_RSS
-    

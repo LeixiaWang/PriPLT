@@ -1,11 +1,10 @@
-import imp
 import numpy as np
 from parameters import *
 from frequency_oracle import *
 from pripl_tree import *
 from scipy.special import comb
 import itertools
-import tool
+
 
 class Grid(object):
     def __init__(self, dim:int, attribute_indexes:list, attribute_names:tuple, domains:tuple, user_data:np.array = None):
@@ -33,7 +32,7 @@ class Grid(object):
     def set_distribution(self, distribution):
         self.distribution = distribution  
 
-    def add_node_mapping(self, attr_index, relation:{'splitting', 'merging'}, node_ids: list or int, grid_ids: list or int):
+    def add_node_mapping(self, attr_index, relation:{'splitting', 'merging'}, node_ids: list | int, grid_ids: list | int):
         if relation == 'splitting':
             assert isinstance(node_ids, int) and isinstance(grid_ids, list)
             self.splitting_relation[int(attr_index)].append((grid_ids, node_ids))
@@ -59,14 +58,11 @@ class Multi_grids(object):
         self.tree_set,self.grid_set = {}, {}
         self.beta = beta
         self.iterative_maximal_number = 1000
-        self.real_distribution = tool.count(data, self.domain_sizes) # used for query testing, which is not neccesary for the estimation
 
 
-    def build_multi_grids(self):
+    def build_multi_grids(self, run_time = False):
         # estimate 1-d distribution with PriPL-Tree
         self._1d_estimation()
-        # choose the attributes to construct grids
-        self._grids_initialize()
         # partition these grids adaptively
         self._adaptive_grid_partition()
         # collect frequency for each cell of grids
@@ -75,7 +71,6 @@ class Multi_grids(object):
         self._constrained_inference()
         # build 2-d distribution metrics
         self._distirbution_estimation() 
-        # print('The multi-grids construction is done.')
     
     
     def _1d_estimation(self):
@@ -106,11 +101,10 @@ class Multi_grids(object):
             self.grid_set[i] = grid
             
 
-    def _grids_initialize(self, adaptive_t = False):
-        m = len(self.attributes)
+    def _adaptive_grid_partition(self):
         pairs = np.array(list(itertools.combinations(range(len(self.attributes)), 2))) # a 2-d array
         t = int(comb(len(self.attributes), 2))
-        # initialize the choosed 2-d grids
+        # initialize 2-d grids
         user_num = int(self.user_num / 2 / t)
         start_id = int(self.user_num / 2)
         for i, pair in enumerate(pairs):
@@ -120,10 +114,7 @@ class Multi_grids(object):
             grid = Grid(2, pair, self.attributes[pair], self.domain_sizes[pair], data[:, pair])
             self.grid_set[tuple(pair)] = grid
         del self.data # this command aims to free the memory of data
-
-
-    def _adaptive_grid_partition(self):
-        t = len(self.grid_set) - len(self.attributes)
+        # adaptively grid partitioning
         est_std = math.sqrt(2 * t * self.sigma_square)
         for grid_id, grid in self.grid_set.items():
             if not isinstance(grid_id, tuple):
@@ -258,10 +249,10 @@ class Multi_grids(object):
             if f_l < thresh or f_r < thresh:
                 continue
             else:
+                loss = (f_l ** 2) + (f_r ** 2)
                 # a = (i-seg[0]+1)/(seg[1]-seg[0]+1)
                 # b = 1-a
-                a = b = 1
-                loss = a * (f_l ** 2) + b * (f_r ** 2)
+                # loss = (a * f_l) ** 2 + (b * f_r) ** 2
                 if min_loss > loss:
                     min_loss = loss
                     min_indx = i
@@ -273,7 +264,8 @@ class Multi_grids(object):
 
     def __whether_one_or_multi(self, t, g_decide, g_given, f_l, f_r, a_l):
         one_grid_error = 2 * t * self.sigma_square * g_decide * g_given + self.beta * (f_l + f_r)**2
-        multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * (a_l * (f_l ** 2) + (1-a_l) * (f_r ** 2))
+        # multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * ((f_l ** 2) + (f_r ** 2))
+        multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * ((a_l * f_l) ** 2 + ((1-a_l) * f_r) ** 2)
         return 1 if one_grid_error <= multi_grid_error else 2
 
 
@@ -317,6 +309,7 @@ class Multi_grids(object):
                     for attr_id, relation in relation_dict.items():
                         for cell_ids, node_ids in relation:
                             self.__update_local_minimal_frequency(grid, attr_id, cell_ids, node_ids)
+                            # self.__update_local_minimal_frequency_wols(grid, attr_id, cell_ids, node_ids)
         for gird_id, grid in self.grid_set.items():
             if isinstance(gird_id, int):
                 grid.grid_frequencies = self.__weighted_averaging(grid.grid_frequencies, 1, non_negative=True)
@@ -345,17 +338,35 @@ class Multi_grids(object):
         else:
             cell_mask[:, grid_ids] = True
         # compute the optimal frequency
-        freqs_to_comp = [grid.grid_frequencies[cell_mask].sum(), self.grid_set[attr_id].grid_frequencies[node_ids].sum()]
-        vars_to_comp = [grid.grid_var[cell_mask].sum(), self.grid_set[attr_id].grid_var[node_ids].sum()]
-        optimal_frequency, optimal_var = self.__minimize_variance(freqs_to_comp, vars_to_comp)
-        # update the node
         if isinstance(node_ids, int):
+            freqs_to_comp = [grid.grid_frequencies[cell_mask].sum(), self.grid_set[attr_id].grid_frequencies[node_ids]]
+            vars_to_comp = [grid.grid_var[cell_mask].sum(), self.grid_set[attr_id].grid_var[node_ids].sum()]
+            optimal_frequency, optimal_var = self.__minimize_variance(freqs_to_comp, vars_to_comp)
+            # update the node
             self.grid_set[attr_id].grid_frequencies[node_ids] = optimal_frequency
             self.grid_set[attr_id].grid_var[node_ids] = optimal_var
         else:
-            old_frequencies = self.grid_set[attr_id].grid_frequencies[node_ids].copy()
-            self.grid_set[attr_id].grid_frequencies[node_ids] = self.__weighted_averaging(self.grid_set[attr_id].grid_frequencies[node_ids], optimal_frequency, non_negative = False) 
-            self.grid_set[attr_id].grid_var[node_ids] = self.__weighted_averaging_var(self.grid_set[attr_id].grid_frequencies[node_ids], old_frequencies, optimal_frequency, self.grid_set[attr_id].grid_var[node_ids], optimal_var)
+            freqs_to_comp = [grid.grid_frequencies[cell_mask].sum(), self.grid_set[attr_id].grid_frequencies[node_ids].sum()]
+            vars_to_comp = [grid.grid_var[cell_mask].sum(), self.grid_set[attr_id].grid_var.sum()]
+            optimal_frequency, alpha = self.__minimize_variance(freqs_to_comp, vars_to_comp, True)
+            # update the coefficients (step 1)
+            error_vector = np.append(self.grid_set[attr_id].grid_var[node_ids], grid.grid_var[cell_mask].sum())
+            error_coef_matrix = np.identity(len(error_vector))
+            coef_1 = np.zeros(len(node_ids) + 1)
+            coef_1[-1] = alpha[0]
+            coef_1[:-1] = alpha[1]
+            error_coef_matrix[-1] = np.dot(coef_1, error_coef_matrix)
+            # update the node
+            update_frequencies = self.__weighted_averaging(self.grid_set[attr_id].grid_frequencies[node_ids], optimal_frequency, non_negative = False) 
+            self.grid_set[attr_id].grid_frequencies[node_ids]  = update_frequencies.copy()
+            # update the coefficients (step 2)
+            coef_2 = np.identity(len(node_ids) + 1)[:len(node_ids)]
+            mask = (update_frequencies > 0)
+            if len(np.where(mask)[0]) > 0:
+                coef_2[mask,:-1] -= 1 / len(np.where(mask)[0])
+                coef_2[mask,-1] = 1 / len(np.where(mask)[0])
+            coef = np.dot(coef_2, error_coef_matrix)
+            self.grid_set[attr_id].grid_var[node_ids] = np.dot(np.square(coef), error_vector).reshape(-1)
 
     
     def __update_local_frequency_given_optima(self, grid, attr_id, grid_ids, node_ids):
@@ -374,15 +385,21 @@ class Multi_grids(object):
             grid.grid_frequencies[cell_mask] = self.__weighted_averaging(grid.grid_frequencies[cell_mask], optimal_frequency, non_negative = True)
 
 
-    def __minimize_variance(self, xs, vars):
+    def __minimize_variance(self, xs, vars, return_alpha = False):
         xs = np.array(xs)
         vars = np.array(vars)
         if any(vars == 0):
-            print(vars)
-        alpha = 1 / (vars * np.sum(1/vars, axis = 0))
+            index = np.where(vars == 0)[0]
+            alpha = np.zeros(len(vars))
+            alpha[index] = 1
+        else:
+            alpha = 1 / (vars * np.sum(1/vars, axis = 0))
         update_xs = np.sum(xs * alpha, axis = 0)
         udpate_vars = np.sum(vars * np.square(alpha), axis = 0)
-        return update_xs, udpate_vars
+        if return_alpha:
+            return update_xs, alpha
+        else:
+            return update_xs, udpate_vars
     
 
     def __weighted_averaging(self, children_f:np.array, parent_f:float, non_negative = True):
@@ -399,16 +416,7 @@ class Multi_grids(object):
                         print(parent_f,children_f)
                     C[mask] += (parent_f - C.sum()) / np.sum(mask)
         return C
-        
-
-    def __weighted_averaging_var(slef, new_freqs, old_freqs, updated_sum, old_vars, sum_var):
-        if updated_sum == np.sum(old_freqs):
-            return old_vars
-        else:
-            r = (new_freqs - old_freqs) / (updated_sum - np.sum(old_freqs))
-            new_vars = np.square(1-r) * old_vars + np.square(r) * (sum_var + np.sum(old_vars) - old_vars)
-            return new_vars
-        
+    
 
     def _distirbution_estimation(self):
         for grid_id, grid in self.grid_set.items():
@@ -445,7 +453,7 @@ class Multi_grids(object):
                 grid.set_distribution(distribution)
 
 
-    def answer_range_query(self, query_ranges:list, attribute_indexes:list or int = None, attribute_names:list or str = None):
+    def answer_range_query(self, query_ranges:list, attribute_indexes:list | int = None, attribute_names:list | str = None, run_time = False):
         # extract the indexes of attributes of queries
         if attribute_names is not None:
             attribute_indexes = np.where(self.attributes == np.array(attribute_names)[:,None])[-1] if not np.isscalar(attribute_names) else np.where(self.attributes == attribute_names)[0][0]
@@ -523,15 +531,19 @@ class Multi_grids(object):
                     if np.sum(distribution[index01, -1]) != 0:
                         distribution[index01, -1] = distribution[index01, -1] / np.sum(distribution[index01, -1]) * grid_freq['01']
                     if np.sum(distribution[index00, -1]) != 0:
-                        distribution[index00, -1] = distribution[index00, -1] / np.sum(distribution[index00, -1]) * grid_freq['00']                   
+                        distribution[index00, -1] = distribution[index00, -1] / np.sum(distribution[index00, -1]) * grid_freq['00']                 
                 # 2nd. update according to 1-d constraints
                 for i, grid_freq in enumerate(constraints_1d):
                     index1 = np.where(distribution[:,i] == 1)[0]
                     index0 = np.where(distribution[:,i] == 0)[0]
-                    if np.sum(distribution[index1, -1]) != 0:
-                        distribution[index1, -1] = distribution[index1, -1] / np.sum(distribution[index1, -1]) * grid_freq[1]
-                    if np.sum(distribution[index0, -1]) != 0:
-                        distribution[index0, -1] = distribution[index0, -1] / np.sum(distribution[index0, -1]) * grid_freq[0]
+                    if self.scheme == 'multiply':
+                        if np.sum(distribution[index1, -1]) != 0:
+                            distribution[index1, -1] = distribution[index1, -1] / np.sum(distribution[index1, -1]) * grid_freq[1]
+                        if np.sum(distribution[index0, -1]) != 0:
+                            distribution[index0, -1] = distribution[index0, -1] / np.sum(distribution[index0, -1]) * grid_freq[0]
+                    elif self.scheme == 'add':
+                        distribution[index1, -1] = self.__weighted_averaging(distribution[index1,-1], grid_freq[1])
+                        distribution[index0, -1] = self.__weighted_averaging(distribution[index0,-1], grid_freq[0])
                 distribution[:,-1] = distribution[:,-1] / np.sum(distribution[:, -1])
                 answer = distribution[-1,-1]
                 if abs(old_answer - answer) < 1 / (self.user_num ** 2):

@@ -1,8 +1,5 @@
-from heapq import merge
-from matplotlib.backend_bases import NonGuiException
 import numpy as np
 import math
-import matplotlib.pyplot as plt
 from parameters import arguments
 import scipy
 from numpy import True_, linalg as LA
