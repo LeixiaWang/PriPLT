@@ -58,6 +58,7 @@ class Multi_grids(object):
         self.tree_set,self.grid_set = {}, {}
         self.beta = beta
         self.iterative_maximal_number = 1000
+        self.update_error = True
 
 
     def build_multi_grids(self, run_time = False):
@@ -240,7 +241,7 @@ class Multi_grids(object):
         return x_relation_record, x_status, x_partitions, x_grid_freq
 
 
-    def __find_best_split_point(self, seg, whole_frequencies, thresh):
+    def __find_best_split_point(self, seg, whole_frequencies, y_grid_freq, thresh):
         min_loss = np.inf
         min_indx = -1
         for i in range(seg[0], seg[1]):
@@ -249,10 +250,7 @@ class Multi_grids(object):
             if f_l < thresh or f_r < thresh:
                 continue
             else:
-                loss = (f_l ** 2) + (f_r ** 2)
-                # a = (i-seg[0]+1)/(seg[1]-seg[0]+1)
-                # b = 1-a
-                # loss = (a * f_l) ** 2 + (b * f_r) ** 2
+                loss = np.sum(np.square(f_l * y_grid_freq)) + np.sum(np.square(f_r * y_grid_freq))
                 if min_loss > loss:
                     min_loss = loss
                     min_indx = i
@@ -262,10 +260,9 @@ class Multi_grids(object):
             return [[seg[0], min_indx], [min_indx+1, seg[1]]]
 
 
-    def __whether_one_or_multi(self, t, g_decide, g_given, f_l, f_r, a_l):
-        one_grid_error = 2 * t * self.sigma_square * g_decide * g_given + self.beta * (f_l + f_r)**2
-        # multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * ((f_l ** 2) + (f_r ** 2))
-        multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * ((a_l * f_l) ** 2 + ((1-a_l) * f_r) ** 2)
+    def __whether_one_or_multi(self, t, g_decide, g_given, f_l, f_r, y_grid_freq, a_l):
+        one_grid_error = 2 * t * self.sigma_square * g_decide * g_given + self.beta * np.sum(np.square((f_l + f_r)*y_grid_freq))
+        multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * (np.sum(np.square(f_l * y_grid_freq)) + np.sum(np.square(f_r * y_grid_freq)))
         return 1 if one_grid_error <= multi_grid_error else 2
 
 
@@ -309,7 +306,6 @@ class Multi_grids(object):
                     for attr_id, relation in relation_dict.items():
                         for cell_ids, node_ids in relation:
                             self.__update_local_minimal_frequency(grid, attr_id, cell_ids, node_ids)
-                            # self.__update_local_minimal_frequency_wols(grid, attr_id, cell_ids, node_ids)
         for gird_id, grid in self.grid_set.items():
             if isinstance(gird_id, int):
                 grid.grid_frequencies = self.__weighted_averaging(grid.grid_frequencies, 1, non_negative=True)
@@ -360,13 +356,14 @@ class Multi_grids(object):
             update_frequencies = self.__weighted_averaging(self.grid_set[attr_id].grid_frequencies[node_ids], optimal_frequency, non_negative = False) 
             self.grid_set[attr_id].grid_frequencies[node_ids]  = update_frequencies.copy()
             # update the coefficients (step 2)
-            coef_2 = np.identity(len(node_ids) + 1)[:len(node_ids)]
-            mask = (update_frequencies > 0)
-            if len(np.where(mask)[0]) > 0:
-                coef_2[mask,:-1] -= 1 / len(np.where(mask)[0])
-                coef_2[mask,-1] = 1 / len(np.where(mask)[0])
-            coef = np.dot(coef_2, error_coef_matrix)
-            self.grid_set[attr_id].grid_var[node_ids] = np.dot(np.square(coef), error_vector).reshape(-1)
+            if self.update_error:
+                coef_2 = np.identity(len(node_ids) + 1)[:len(node_ids)]
+                mask = (update_frequencies > 0)
+                if len(np.where(mask)[0]) > 0:
+                    coef_2[mask,:-1] -= 1 / len(np.where(mask)[0])
+                    coef_2[mask,-1] = 1 / len(np.where(mask)[0])
+                coef = np.dot(coef_2, error_coef_matrix)
+                self.grid_set[attr_id].grid_var[node_ids] = np.dot(np.square(coef), error_vector).reshape(-1)
 
     
     def __update_local_frequency_given_optima(self, grid, attr_id, grid_ids, node_ids):

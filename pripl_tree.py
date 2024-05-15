@@ -64,6 +64,7 @@ class Pripl_tree(object):
         self.epsilon = epsilon
         self.alpha = alpha
         self.search_granularity = search_granularity
+        self.update_error = True
         
 
     def build_pripl_tree(self):
@@ -438,11 +439,12 @@ class Pripl_tree(object):
                     coef[C_plus] = - 1 / len(C_plus)
                 for i in range(len(children)):
                     children[i].data.frequency = update_children_f[i]
-                    if i in C_plus: # f_c in C+, then we update its variance
-                        coef_w = coef.copy()
-                        coef_w[i] += 1
-                        children[i].data.error_coef = (1 / len(C_plus)) * node.data.error_coef + np.dot(coef_w, error_coef_matrix)
-                        children[i].data.error = np.dot(np.square(children[i].data.error_coef), self.error_vector)
+                    if self.update_error:
+                        if i in C_plus: # f_c in C+, then we update its variance
+                            coef_w = coef.copy()
+                            coef_w[i] += 1
+                            children[i].data.error_coef = (1 / len(C_plus)) * node.data.error_coef + np.dot(coef_w, error_coef_matrix)
+                            children[i].data.error = np.dot(np.square(children[i].data.error_coef), self.error_vector)
 
 
     def _update_frequency_in_fc(self, children_f:np.array, parent_f, non_negative = True):
