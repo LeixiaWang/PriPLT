@@ -16,7 +16,7 @@ def algo_args():
     parser.add_argument("--epsilon", type=float, default=0.8, help= "the privacy budget")
     parser.add_argument("--query_volume", type=float, default=0.5, help='the ratio of the query range to the domain size (for 1-d).')
     parser.add_argument("--alpha", type=float ,default=0.2, help="the ratio of users for piecewise linear regression")
-    parser.add_argument("--beta", type=float, default=0.03, help="the paramenter in adaptive grids, i.e. the eta in the manuscript.")
+    parser.add_argument("--beta", type=float, default=0.04, help="the paramenter in adaptive grids, i.e. the eta in the manuscript.")
 
     # str type
     parser.add_argument("--data_path", type=str, default='./datasets/', help='the path of dataset')
