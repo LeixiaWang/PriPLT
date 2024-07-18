@@ -260,7 +260,7 @@ class Multi_grids(object):
             return [[seg[0], min_indx], [min_indx+1, seg[1]]]
 
 
-    def __whether_one_or_multi(self, t, g_decide, g_given, f_l, f_r, y_grid_freq, a_l):
+    def __whether_one_or_multi(self, t, g_decide, g_given, f_l, f_r, y_grid_freq):
         one_grid_error = 2 * t * self.sigma_square * g_decide * g_given + self.beta * np.sum(np.square((f_l + f_r)*y_grid_freq))
         multi_grid_error = 2 * t * self.sigma_square * (g_decide + 1) * g_given + self.beta * (np.sum(np.square(f_l * y_grid_freq)) + np.sum(np.square(f_r * y_grid_freq)))
         return 1 if one_grid_error <= multi_grid_error else 2

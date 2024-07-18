@@ -7,7 +7,7 @@ import numpy as np
 
 if __name__ == '__main__':
 
-    # A example for 1-D range queries
+    # An example for 1-D range queries
     # 1st. read data
     data, domain_size, attributes = tool.load_data(arguments.dataset, dimension_num=1)
     # 2nd. build pripl tree
@@ -20,7 +20,7 @@ if __name__ == '__main__':
     ans = priplt.query(a_query)
     print("the answer of Q({}) is {}".format(a_query, ans))
 
-    # A example for ]ambda-D range queries
+    # An example for ]ambda-D range queries
     # 1st. read data
     data, domain_sizes, attributes = tool.load_data(arguments.dataset, dimension_num=arguments.attribute_num)
     # 2nd. build pripl tree
