@@ -153,10 +153,10 @@ class Multi_grids(object):
                 y_max_id = y_candidate_index[np.argmax(y_grid_freq[y_candidate_index])] if any(y_status > 0) else None
                 # split x axis
                 if (y_max_id is None) or ((x_max_id is not None) and (x_grid_freq[x_max_id] >= y_grid_freq[y_max_id])):
-                    x_relation_record, x_status, x_partitions, x_grid_freq = self.__split_the_cell(t, x_max_id, x_partitions, x_grid_freq, x_distribution, y_partitions, est_std, x_relation_record, x_status)
+                    x_relation_record, x_status, x_partitions, x_grid_freq = self.__split_the_cell(t, x_max_id, x_partitions, x_grid_freq, x_distribution, y_partitions, y_grid_freq,  est_std, x_relation_record, x_status)
                 # splite y axis
                 else:
-                    y_relation_record, y_status, y_partitions, y_grid_freq = self.__split_the_cell(t, y_max_id, y_partitions, y_grid_freq, y_distribution, x_partitions, est_std, y_relation_record, y_status)
+                    y_relation_record, y_status, y_partitions, y_grid_freq = self.__split_the_cell(t, y_max_id, y_partitions, y_grid_freq, y_distribution, x_partitions, y_grid_freq, est_std, y_relation_record, y_status)
             # seconde, we perform merging
             while any(x_status < 0) or any(y_status < 0):
                 x_candidate_index = np.where(x_status < 0)[0]
@@ -176,11 +176,11 @@ class Multi_grids(object):
             grid = self.__store_cell_relations(y_id, grid, y_relation_record)             
 
 
-    def __split_the_cell(self, t, x_max_id, x_partitions, x_grid_freq, x_distribution, y_partitions, est_std, x_relation_record, x_status):
+    def __split_the_cell(self, t, x_max_id, x_partitions, x_grid_freq, x_distribution, y_partitions, y_grid_freq, est_std, x_relation_record, x_status):
         # 1st. the frequency to be split should be larger than standard variance
         if x_grid_freq[x_max_id] > est_std:
             # 2nd. find the best split point
-            new_parts = self.__find_best_split_point(x_partitions[x_max_id], x_distribution, est_std)
+            new_parts = self.__find_best_split_point(x_partitions[x_max_id], x_distribution, y_grid_freq, est_std)
             if new_parts is None:
                 x_status[x_max_id] = -1 if x_status[x_max_id] == 1 else 0
                 # in this step, we can choose to transform the status to 0 directly

@@ -60,31 +60,20 @@ def search_with_multi_level_steps(Y, break_points, l, r, return_all_break_points
     '''
     the formal pl fitting function
     '''
-    # compute the granularity and how deep the overviews needed
-    deep = 0
     domain_size = r - l + 1
-    while True:
-        g = math.ceil(domain_size / support_searched_domain_size)
-        if g == 1:
-            break
-        elif g <= support_searched_domain_size:
-            deep += 1
-            break
-        else: # g > support_at_most_domain_size:
-            g = support_searched_domain_size
-            deep += 1
-            domain_size = math.ceil(domain_size / g)
     # find the best break point from the coarse domain repeatedly until deep = 0
     fined_l = l + minima_segment_length - 1
     fined_r = r - minima_segment_length + 1
-    while deep >= 0:
-        step = g ** deep 
-        deep -= 1
+    while True:
+        step = math.ceil(domain_size / support_searched_domain_size)
         best_break_point, new_break_points, best_slopes= search_the_best_break_points(Y, break_points, fined_l, fined_r, True, step)
         fined_l = int(best_break_point + 0.5 - step)
         fined_l = fined_l if fined_l >= l + minima_segment_length - 1 else l + minima_segment_length - 1
         fined_r = int(best_break_point - 0.5 + step)
         fined_r = fined_r if fined_r <= r - minima_segment_length + 1 else r - minima_segment_length + 1
+        domain_size = 2 * step - 1
+        if step == 1:
+            break
     if return_all_break_points:
         return best_break_point, new_break_points, best_slopes
     else:
